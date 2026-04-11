@@ -35,7 +35,7 @@ This means the README and the notebook both reflect the same design: real baseli
 
 The pipeline starts by polling Gmail for unread emails matching the collection request query. A user sends a structured email with pickup stops:
 
-![Incoming Pickup Schedule Email](screenshots/Screenshot%202026-04-12%20at%204.31.50%20AM.png)
+![Incoming Pickup Schedule Email](screenshots/incoming-pickup-schedule-email.png)
 
 The email contains stop details including store ID, pickup address, delivery address, expected times, and temperature control requirements.
 
@@ -43,7 +43,7 @@ The email contains stop details including store ID, pickup address, delivery add
 
 Once parsed and geocoded, the pipeline optimizes the route using ORS VROOM and sends back an HTML confirmation email with an interactive table showing the optimized sequence, ETAs, and route summary:
 
-![Optimized Route Confirmation Email](screenshots/Screenshot%202026-04-12%20at%204.30.53%20AM.png)
+![Optimized Route Confirmation Email](screenshots/optimized-route-confirmation-email.png)
 
 The reply includes:
 - Optimized stop sequence with ETAs
@@ -54,7 +54,7 @@ The reply includes:
 
 All request data, geocoding results, and optimized routes are logged to the `route_output` Google Sheets tab for auditing and analysis:
 
-![Google Sheets Route Output](screenshots/Screenshot%202026-04-12%20at%204.35.43%20AM.png)
+![Google Sheets Route Output](screenshots/google-sheets-route-output.png)
 
 The sheet captures:
 - Request ID and optimized sequence
