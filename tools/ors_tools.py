@@ -317,6 +317,14 @@ def distance_matrix(locations: List[dict], profile: str = "driving-hgv") -> dict
           durations: NxN matrix (seconds between each pair)
           distances: NxN matrix (meters between each pair)
     """
+
+    if len(locations) < 2:
+        return {
+            "legs": [],
+            "total_distance_km": 0.0,
+            "total_duration_min": 0.0,
+        }
+    
     loc_coords = [[loc["longitude"], loc["latitude"]] for loc in locations]
 
     resp = requests.post(
@@ -331,11 +339,36 @@ def distance_matrix(locations: List[dict], profile: str = "driving-hgv") -> dict
     resp.raise_for_status()
     data = resp.json()
 
+    durations = data.get("durations", [])
+    distances = data.get("distances", [])
+
+    legs = []
+    for i in range(len(locations) - 1):
+        legs.append({
+            "from": locations[i].get("store_name", f"Stop {i+1}"),
+            "to": locations[i + 1].get("store_name", f"Stop {i+2}"),
+            "distance_km": round(distances[i][i + 1] / 1000, 2),
+            "duration_min": round(durations[i][i + 1] / 60, 2),
+        })
+
+    total_distance_km = round(sum(leg["distance_km"] for leg in legs), 2)
+    total_duration_min = round(sum(leg["duration_min"] for leg in legs), 2)
+
     return {
-        "durations": data.get("durations", []),
-        "distances": data.get("distances", []),
+        "legs": legs,
+        "total_distance_km": total_distance_km,
+        "total_duration_min": total_duration_min,
     }
 
+# print(distance_matrix(
+#     [
+#         {'store_name': 'Store A', 'address': '1600 Amphitheatre Parkway, Mountain View, CA', 'latitude': 37.422288, 'longitude': -122.085652},
+#         {'store_name': 'Store B', 'address': '1 Hacker Way, Menlo Park, CA', 'latitude': 37.4847, 'longitude': -122.1477},
+#         {'store_name': 'Store C', 'address': '2300 Traverwood Dr, Ann Arbor, MI', 'latitude': 42.3037, 'longitude': -83.7108},
+#     ]
+# ))
+# output:
+# {'legs': [{'from': 'Store A', 'to': 'Store B', 'distance_km': 11.37, 'duration_min': 15.75}, {'from': 'Store B', 'to': 'Store C', 'distance_km': 3838.34, 'duration_min': 3244.26}], 'total_distance_km': 3849.71, 'total_duration_min': 3260.01}
 
 def optimize_route_with_retry(stops: List[dict], max_retries: int = 3) -> dict:
     """
