@@ -207,14 +207,18 @@ def optimize_route(stops: List[dict]) -> dict:
 
     payload = {"jobs": jobs, "vehicles": vehicles}
 
-    resp = requests.post(
-        f"{ORS_BASE}/optimization",
-        headers=_ors_headers(),
-        json=payload,
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp = requests.post(
+            f"{ORS_BASE}/optimization",
+            headers=_ors_headers(),
+            json=payload,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.error("ORS /optimization request failed: %s. Payload: %s", e, payload)
+        raise
 
     # print("----------")
     # print(data)
@@ -342,14 +346,32 @@ def distance_matrix(locations: List[dict], profile: str = "driving-hgv") -> dict
     durations = data.get("durations", [])
     distances = data.get("distances", [])
 
+    if not durations or not distances:
+        raise ValueError(f"Matrix API returned empty durations or distances. Response: {data}")
+
     legs = []
     for i in range(len(locations) - 1):
+        dist = distances[i][i + 1] if i < len(distances) and (i + 1) < len(distances[i]) else None
+        dur = durations[i][i + 1] if i < len(durations) and (i + 1) < len(durations[i]) else None
+
+        if dist is None or dur is None:
+            log.warning("Distance matrix[%d][%d] is None, skipping leg", i, i+1)
+            continue
+
         legs.append({
             "from": locations[i].get("store_name", f"Stop {i+1}"),
             "to": locations[i + 1].get("store_name", f"Stop {i+2}"),
-            "distance_km": round(distances[i][i + 1] / 1000, 2),
-            "duration_min": round(durations[i][i + 1] / 60, 2),
+            "distance_km": round(dist / 1000, 2),
+            "duration_min": round(dur / 60, 2),
         })
+
+    if not legs:
+        log.warning("No valid legs in distance matrix result")
+        return {
+            "legs": [],
+            "total_distance_km": 0.0,
+            "total_duration_min": 0.0,
+        }
 
     total_distance_km = round(sum(leg["distance_km"] for leg in legs), 2)
     total_duration_min = round(sum(leg["duration_min"] for leg in legs), 2)

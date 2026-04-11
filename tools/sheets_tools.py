@@ -1,10 +1,12 @@
 from __future__ import annotations
 import os
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from langchain_core.tools import tool
+from email.utils import parseaddr
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -69,16 +71,23 @@ def save_email_log(collection_request_id: str, sender_email: str, sender_company
     ws = open_sheet(TAB_EMAIL_LOG)
 
     headers = [
-        "request_id", "sender_email", "sender_company", "email_body", "received_at"
+        "request_id","sender_name", "sender_email", "sender_company", "email_body", "received_at"
     ]
     ensure_headers(ws, headers)
 
+    sender_name, sender_email = parseaddr(sender_email)
+
+    if not sender_name:
+        sender_name = sender_email.split("@")[0]
+    received_at = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p")
+
     ws.append_row([
         collection_request_id,
+        sender_name,
         sender_email,
         sender_company,
         raw_body,
-        datetime.now(timezone.utc).isoformat()
+        received_at
     ])
 
     return "email saved"
@@ -113,8 +122,9 @@ def save_parsed_stops(collection_request_id: str, stops: list):
     ]
     ensure_headers(ws, headers)
 
+    rows = []
     for i, stop in enumerate(stops, 1):
-        ws.append_row([
+        rows.append([
             collection_request_id,
             i,
             stop.get("store_id", ""),
@@ -126,8 +136,7 @@ def save_parsed_stops(collection_request_id: str, stops: list):
             "YES" if stop.get("temperature_control") else "NO",
             stop.get("collection_date", "")
         ])
-
-    return f"{len(stops)} stops saved"
+    ws.append_rows(rows)
 
 
 # ── Geocoded Data ────────────────────────────────────────
@@ -223,7 +232,7 @@ def save_route(collection_request_id: str, route: dict):
             stop.get("original_sequence", ""),
             stop.get("store_id", ""),
             stop.get("store_name", ""),
-            stop.get("address", ""),
+            stop.get("pickup_address", ""),
             stop.get("latitude", ""),
             stop.get("longitude", ""),
             stop.get("delivery_address", ""),
@@ -287,7 +296,6 @@ def check_duplicate(collection_request_id: str) -> bool:
     if not data:
         return False
 
-    # Skip header row, check first column (request_id)
     for row in data[1:]:
         if row and row[0] == collection_request_id:
             return True
