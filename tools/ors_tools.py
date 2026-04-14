@@ -1,19 +1,19 @@
 """
 tools/ors_tools.py
-OpenRouteService tools — geocoding (Pelias) + VROOM route optimization.
+OpenRouteService tools — geocoding (Pelias) + VROOM optimisation + distance matrix.
 
-n8n equivalents:
-  geocode_address()              →  GPS Pickup / GPS Delivery nodes
-  optimize_route()               →  Request Open Route API → Extract Job → Merge Sequence
-  optimize_route_with_retry()    →  Retry wrapper — 3 attempts, exponential backoff (spec §5.3)
+Endpoints used:
+  geocode_address()   →  GET  /geocode/search
+  elevation_point()   →  POST /elevation/point
+  optimize_route()    →  POST /optimization          (VROOM shipments)
+  distance_matrix()   →  POST /v2/matrix/{profile}  (before/after POV)
 """
 from dotenv import load_dotenv
 load_dotenv()
 
 import os
-import time
 import logging
-from typing import List
+from typing import List, Optional
 
 log = logging.getLogger(__name__)
 
@@ -21,323 +21,468 @@ import requests
 from langchain_core.tools import tool
 
 ORS_BASE = "https://api.openrouteservice.org"
-ORS_KEY = os.getenv("ORS_API_KEY", "")
+ORS_KEY  = os.getenv("ORS_API_KEY", "")
 
+
+# ── Shared helpers ────────────────────────────────────────────────────────────
 
 def _ors_headers() -> dict:
     return {
         "Authorization": ORS_KEY,
-        "Content-Type": "application/json",
-        "Accept": "application/json, application/geo+json",
+        "Content-Type":  "application/json",
+        "Accept":        "application/json, application/geo+json",
     }
 
+
+def _time_str_to_seconds(time_str: str) -> Optional[int]:
+    """
+    Convert 'HH:MM' string to seconds since midnight.
+    Returns None if parsing fails.
+
+    VROOM time windows are in seconds since midnight:
+        '08:00' → 28800,  '10:15' → 36900,  '13:30' → 48600
+    """
+    try:
+        parts = time_str.strip().split(":")
+        h, m = int(parts[0]), int(parts[1])
+        return h * 3600 + m * 60
+    except (ValueError, AttributeError, IndexError):
+        return None
+
+
+# ── Geocoding ─────────────────────────────────────────────────────────────────
 
 @tool
 def geocode_address(address: str) -> dict:
     """
-    Convert a human-readable address to GPS coordinates using ORS Geocoder (Pelias).
+    Convert a human-readable address to GPS coordinates (ORS Pelias).
 
-    Endpoint: GET https://api.openrouteservice.org/geocode/search
-    Params:
-        api_key  - your ORS key (query param)
-        text     - address string
-        size     - number of results (we use 1)
-
+    Endpoint: GET /geocode/search
     Args:
         address: Full street address to geocode.
-
     Returns:
-        dict with keys: address (str), latitude (float), longitude (float), confidence (float).
+        { address, latitude, longitude, confidence }
     """
     resp = requests.get(
         f"{ORS_BASE}/geocode/search",
-        params={
-            "api_key": ORS_KEY,
-            "text": address,
-            "size": 1,
-        },
+        params={"api_key": ORS_KEY, "text": address, "size": 1},
         timeout=10,
     )
     resp.raise_for_status()
     data = resp.json()
 
     if not data.get("features"):
-        raise ValueError(f"No geocoding result for address: {address!r}")
+        raise ValueError(f"No geocoding result for: {address}")
 
-    feature = data["features"][0]
-    lon, lat = feature["geometry"]["coordinates"]
-    label = feature["properties"].get("label", address)
-    confidence = feature["properties"].get("confidence", 0.0)
+    feat       = data["features"][0]
+    lon, lat   = feat["geometry"]["coordinates"]
+    label      = feat["properties"].get("label", address)
+    confidence = feat["properties"].get("confidence", 0.0)
 
-    return {
-        "address": label,
-        "latitude": lat,
-        "longitude": lon,
-        "confidence": confidence,
-    }
-# print(geocode_address("1600 Amphitheatre Parkway, Mountain View, CA"))
-# output:
-#  {                                                                                      
-#     "address": "1600 Amphitheatre Parkway, Mountain View, CA, USA",                      
-#     "latitude": 37.422288,                                                               
-#     "longitude": -122.085652,                                                            
-#     "confidence": 1                                                                      
-#   }        
+    return {"address": label, "latitude": lat, "longitude": lon, "confidence": confidence}
+
+
+# ── Elevation ─────────────────────────────────────────────────────────────────
 
 @tool
 def elevation_point(latitude: float, longitude: float) -> dict:
     """
-    Get elevation (height above sea level in meters) for a single GPS coordinate
-    using ORS Elevation API.
+    Get elevation (metres above sea level) for a GPS coordinate.
 
-    Endpoint: POST https://api.openrouteservice.org/elevation/point
-    Body:
-        {
-          "geometry": {
-            "type": "Point",
-            "coordinates": [lon, lat]
-          }
-        }
-
-    Response format:
-        {
-          "geometry": { "coordinates": [lon, lat, elevation] },
-          "attribution": "...",
-          "timestamp": ...,
-          "version": "..."
-        }
-
+    Endpoint: POST /elevation/point
     Args:
-        latitude: Latitude coordinate.
-        longitude: Longitude coordinate.
-
+        latitude, longitude: GPS coordinate.
     Returns:
-        dict with keys: elevation (float in meters), latitude (float), longitude (float).
+        { elevation, latitude, longitude }
     """
     resp = requests.post(
         f"{ORS_BASE}/elevation/point",
         headers=_ors_headers(),
-        json={
-            "format_in": "geojson",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [longitude, latitude]
-            }
-        },
+        json={"format_in": "geojson",
+              "geometry": {"type": "Point", "coordinates": [longitude, latitude]}},
         timeout=10,
     )
     resp.raise_for_status()
-    data = resp.json()
-
+    data   = resp.json()
     coords = data.get("geometry", {}).get("coordinates", [])
-    elevation = coords[2] if len(coords) >= 3 else 0.0
-
     return {
-        "elevation": elevation,
-        "latitude": latitude,
+        "elevation": coords[2] if len(coords) >= 3 else 0.0,
+        "latitude":  latitude,
         "longitude": longitude,
     }
-# print(elevation_point(37.422288, -122.085652))
-# output :{'elevation': 7, 'latitude': 37.422288, 'longitude': -122.085652}
+
+
+# ── Route Optimisation (VROOM) ────────────────────────────────────────────────
 
 @tool
-def optimize_route(stops: List[dict]) -> dict:
+def optimize_route(
+    stops: List[dict],
+    depot_lon: float,
+    depot_lat: float,
+    max_vehicles: int   = 5,
+    vehicle_capacity: int = 100,
+    use_pd_pairs: bool  = True,
+) -> dict:
     """
-    Send geocoded stops to ORS /optimization (VROOM) to get the optimal
-    truck pickup sequence with driving duration and distance.
+    Send geocoded stops to ORS /optimization (VROOM).
 
-    Endpoint: POST https://api.openrouteservice.org/optimization
-    Body schema (VROOM):
+    Supports two modes:
+      use_pd_pairs=True  → VROOM `shipments` — pickup ALWAYS precedes its delivery.
+      use_pd_pairs=False → VROOM `jobs`       — pickup-only (no PD pairing).
+
+    Request body format (matching ORS VROOM API spec):
       {
-        "jobs": [
-          { "id": <int>, "location": [lon, lat], "service": 300 }
+        "jobs": [  # or "shipments" for PD pairs
+          {
+            "id": int,
+            "service": int,           # service time in seconds (default: 300)
+            "location": [lon, lat],
+            "skills": [int],          # optional skill requirements
+            "time_windows": [[start_s, end_s]]  # optional
+          }
         ],
         "vehicles": [
           {
-            "id": 1,
-            "profile": "driving-hgv",
-            "start": [depot_lon, depot_lat],
-            "end":   [depot_lon, depot_lat],   ← circular return
-            "time_window": [28800, 64800]       ← 08:00–18:00 in seconds from midnight
+            "id": int,
+            "profile": str,           # e.g., "driving-hgv"
+            "start": [lon, lat],
+            "end": [lon, lat],
+            "capacity": [int],        # array of capacity dimensions
+            "skills": [int],          # optional skill requirements
+            "time_window": [start_s, end_s]  # vehicle availability window
+          }
+        ]
+      }
+
+    Response format from ORS /optimization:
+      {
+        "code": 0,
+        "summary": {
+          "cost": int,                # total route cost
+          "routes": int,              # number of routes used
+          "unassigned": int,          # count of unassigned jobs
+          "delivery": [int],          # total delivery amounts per dimension
+          "amount": [int],            # total amount delivered
+          "pickup": [int],            # total pickup amounts per dimension
+          "setup": int,               # total setup time
+          "service": int,             # total service time
+          "duration": int,            # total duration including service/waiting
+          "waiting_time": int,        # total waiting time
+          "priority": int,            # priority score
+          "violations": [],           # constraint violations
+          "computing_times": {        # performance metrics
+            "loading": int,           # loading time in ms
+            "solving": int,           # solving time in ms
+            "routing": int            # routing time in ms
+          }
+        },
+        "unassigned": [
+          { "id": int, "location": [lon,lat], "type": "job|pickup|delivery" }
+        ],
+        "routes": [
+          {
+            "vehicle": int,
+            "cost": int,
+            "delivery": [int],
+            "amount": [int],
+            "pickup": [int],
+            "setup": int,
+            "service": int,
+            "duration": int,
+            "waiting_time": int,
+            "priority": int,
+            "steps": [
+              {
+                "type": "start|job|pickup|delivery|end",
+                "location": [lon, lat],
+                "setup": int,
+                "service": int,
+                "waiting_time": int,
+                "load": [int],          # remaining load after this step
+                "arrival": int,         # arrival time in seconds since midnight
+                "duration": int,        # cumulative duration to this point
+                "violations": [],
+                "id": int,              # job/pickup/delivery ID (if applicable)
+                "job": int              # alternative ID field
+              }
+            ],
+            "violations": []
           }
         ]
       }
 
     Args:
-        stops: List of dicts, each must have:
-               { stop_index, store_name, address, longitude, latitude }
+        stops: List of geocoded stop dicts (stop_index, store_name, pickup/delivery lat/lon, etc.)
+        depot_lon / depot_lat: Depot start/end location.
+        max_vehicles: Fleet size ceiling (VROOM decides actual usage).
+        vehicle_capacity: Capacity per vehicle in units.
+        use_pd_pairs: Enforce pickup-before-delivery ordering via VROOM shipments.
 
     Returns:
-        dict matching RouteResult schema:
-          {
-            total_duration_seconds: int,
-            total_distance_meters: int,
-            ordered_stops: [ { job_id, store_name, address, longitude, latitude,
-                               arrival_time_seconds, service_duration_seconds } ]
-          }
+        {
+          "summary": {
+            # Full VROOM summary with all fields
+            "cost": int,
+            "routes_used": int,
+            "unassigned_count": int,
+            "total_delivery": [int],
+            "total_amount": [int],
+            "total_pickup": [int],
+            "setup_time_sec": int,
+            "service_time_sec": int,
+            "total_duration_sec": int,
+            "total_waiting_time_sec": int,
+            "priority": int,
+            "violations": [],
+            "computing_times": { "loading_ms": int, "solving_ms": int, "routing_ms": int }
+          },
+          "routes": list,       # Per-vehicle routes with full step details
+          "unassigned": list,   # Stops VROOM couldn't assign (with reasons if available)
+          "ordered_stops": list # Flat optimised stop list with sequence, ETA, vehicle assignment
+        }
     """
     if not stops:
         raise ValueError("No stops provided to optimize_route")
 
-    # Depot = first stop for circular routing
-    depot_lon = stops[0]["longitude"]
-    depot_lat = stops[0]["latitude"]
+    TOLERANCE_SEC = 3600   # ±60-minute time-window tolerance
 
-    jobs = [
-        {
-            "id": s["stop_index"],
-            "location": [s["longitude"], s["latitude"]],
-            "service": 300,          # 5 min service time per stop
-            "description": s["store_name"],
-            "amount": [1],           # required for VROOM capacity constraints to be enforced
-        }
-        for s in stops
-    ]
-
+    # ── Vehicle fleet ─────────────────────────────────────────────────────────
+    # Format matches: openrouterservice_examples/optimization/body_object.json
     vehicles = [
         {
-            "id": 1,
-            "profile": "driving-hgv",  # heavy goods vehicle (truck)
-            "start": [depot_lon, depot_lat],
-            "end": [depot_lon, depot_lat],   # circular — returns to depot
-            "time_window": [28800, 64800],   # 08:00–18:00
-            "capacity": [100],               # arbitrary capacity units
+            "id":       i + 1,
+            "profile":  "driving-hgv",            # HGV/truck profile
+            "start":    [depot_lon, depot_lat],   # Depot start location
+            "end":      [depot_lon, depot_lat],   # Depot end location (circular route)
+            "capacity": [vehicle_capacity],       # Capacity per dimension
+            # Optional: skills can be added for constraint-based routing
+            # "skills": [1, 14],                  # Skills this vehicle has
+            "time_window": [28800, 79200],        # Vehicle availability: 08:00–22:00
         }
+        for i in range(max_vehicles)
     ]
 
-    payload = {"jobs": jobs, "vehicles": vehicles}
+    # ── Build payload ─────────────────────────────────────────────────────────
+    if use_pd_pairs:
+        # Use shipments mode: pickup ALWAYS precedes its delivery
+        # Format matches: openrouterservice_examples/optimization/body_object.json
+        shipments = []
+        for s in stops:
+            idx         = s["stop_index"]
+            pickup_id   = idx * 10 + 1
+            delivery_id = idx * 10 + 2
 
-    try:
-        resp = requests.post(
-            f"{ORS_BASE}/optimization",
-            headers=_ors_headers(),
-            json=payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        log.error("ORS /optimization request failed: %s. Payload: %s", e, payload)
-        raise
+            # Build pickup leg (matches ORS VROOM shipment pickup format)
+            pickup_leg = {
+                "id":          pickup_id,
+                "location":    [s["pickup_longitude"], s["pickup_latitude"]],
+                "service":     300,  # 5 minutes service time
+                "description": f"{s['store_name']} Pickup",
+            }
+            # Add time window if specified (±1 hour tolerance)
+            pu_str = s.get("expected_pickup_time")
+            if pu_str:
+                pu_sec = _time_str_to_seconds(pu_str)
+                if pu_sec is not None:
+                    pickup_leg["time_windows"] = [
+                        [max(0, pu_sec - TOLERANCE_SEC), pu_sec + TOLERANCE_SEC]
+                    ]
 
-    # print("----------")
-    # print(data)
-    # print("----------")
+            # Build delivery leg (matches ORS VROOM shipment delivery format)
+            delivery_leg = {
+                "id":          delivery_id,
+                "location":    [s["delivery_longitude"], s["delivery_latitude"]],
+                "service":     300,  # 5 minutes service time
+                "description": f"{s['store_name']} Delivery",
+            }
+            # Add time window if specified (±1 hour tolerance)
+            dl_str = s.get("expected_delivery_time")
+            if dl_str:
+                dl_sec = _time_str_to_seconds(dl_str)
+                if dl_sec is not None:
+                    delivery_leg["time_windows"] = [
+                        [max(0, dl_sec - TOLERANCE_SEC), dl_sec + TOLERANCE_SEC]
+                    ]
 
+            # Shipment format: { "pickup": {...}, "delivery": {...}, "amount": [1] }
+            shipments.append({
+                "pickup":   pickup_leg,
+                "delivery": delivery_leg,
+                "amount":   [1]  # 1 unit per shipment
+            })
 
-    log.info("ORS optimization response: %s", data)
+        payload = {"shipments": shipments, "vehicles": vehicles}
+
+    else:
+        # Plain jobs mode (pickup-only, no PD pairing)
+        # Format matches: openrouterservice_examples/optimization/body_object.json
+        jobs = []
+        for s in stops:
+            idx = s["stop_index"]
+            job = {
+                "id":       idx * 10 + 1,
+                "service":  300,  # 5 minutes service time
+                "delivery": [1],  # Delivery amount (ORS VROOM format)
+                "location": [s["pickup_longitude"], s["pickup_latitude"]],
+                # Optional: skills can be added for constraint-based routing
+                # "skills": [1],
+            }
+            # Add time window if specified
+            pu_str = s.get("expected_pickup_time")
+            if pu_str:
+                pu_sec = _time_str_to_seconds(pu_str)
+                if pu_sec is not None:
+                    job["time_windows"] = [[max(0, pu_sec - TOLERANCE_SEC), pu_sec + TOLERANCE_SEC]]
+
+            jobs.append(job)
+
+        payload = {"jobs": jobs, "vehicles": vehicles}
+
+    # ── POST to /optimization ─────────────────────────────────────────────────
+    resp = requests.post(
+        f"{ORS_BASE}/optimization",
+        headers=_ors_headers(),
+        json=payload,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
 
     if "error" in data:
-        raise ValueError(f"ORS API error: {data['error']}")
+        raise ValueError(f"ORS /optimization error: {data['error']}")
     if not data.get("routes"):
-        raise ValueError("ORS optimization returned no routes - check vehicle/job configuration")
+        raise ValueError("ORS /optimization returned no routes — check vehicle/job config")
 
-    route = data["routes"][0]
+    # ── Parse ordered_stops (flat list in optimised sequence) ─────────────────
+    # Build lookup: vroom job_id → (stop dict, stop_type)
+    job_lookup: dict = {}
+    for s in stops:
+        idx = s["stop_index"]
+        job_lookup[idx * 10 + 1] = (s, "pickup")
+        job_lookup[idx * 10 + 2] = (s, "delivery")
 
-    if "summary" not in route:
-        if "duration" in route or "distance" in route:
-            summary = {"duration": route.get("duration", 0), "distance": route.get("distance", 0)}
-        else:
-            raise ValueError(f"Route missing summary. Full response: {data}")
-    else:
-        summary = route["summary"]
+    ordered_stops: list = []
+    seq = 1
+    for route in data["routes"]:
+        for step in route["steps"]:
+            if step["type"] not in ("pickup", "delivery", "job"):
+                continue
 
-    # Build a lookup for stop metadata
-    stop_lookup = {s["stop_index"]: s for s in stops}
+            job_id = int(step.get("id", step.get("job", 0)))
+            entry  = job_lookup.get(job_id)
+            if not entry:
+                log.warning("Job %s not found in job_lookup", job_id)
+                continue
 
-    ordered_stops = []
-    for step in route["steps"]:
-        if step["type"] != "job":
-            continue
-        job_id = step["job"]
-        s = stop_lookup[job_id]
-        ordered_stops.append({
-            "job_id": job_id,
-            "store_name": s["store_name"],
-            "address": s["address"],
-            "longitude": s["longitude"],
-            "latitude": s["latitude"],
-            "arrival_time_seconds": step.get("arrival", 0),
-            "service_duration_seconds": step.get("service", 300),
-        })
+            s, stop_type = entry
+            is_delivery   = stop_type == "delivery"
+            ordered_stops.append({
+                "job_id":                   job_id,
+                "store_id":                 s.get("store_id", ""),
+                "store_name":               s["store_name"],
+                "pickup_address":           s["pickup_address"],
+                "delivery_address":         s.get("delivery_address", ""),
+                "address":                  s["delivery_address"] if is_delivery else s["pickup_address"],
+                "latitude":                 s["delivery_latitude"]  if is_delivery else s["pickup_latitude"],
+                "longitude":                s["delivery_longitude"] if is_delivery else s["pickup_longitude"],
+                "stop_type":                stop_type,
+                "vehicle_id":               route["vehicle"],
+                "arrival_time_seconds":     step.get("arrival", 0),
+                "service_duration_seconds": step.get("service", 300),
+                "waiting_time_seconds":     step.get("waiting_time", 0),
+                "temperature_control":      s.get("temperature_control", False),
+                "original_sequence":        s.get("original_sequence", s["stop_index"]),
+                "optimized_sequence":       seq,
+            })
+            seq += 1
 
-    return {
-        "total_duration_seconds": summary["duration"],
-        "total_distance_meters": summary["distance"],
-        "ordered_stops": ordered_stops,
+    summary = data["summary"]
+
+    # Return summary with BOTH original ORS field names (for backward compatibility)
+    # AND detailed field names (for enhanced reporting)
+    detailed_summary = {
+        # Original ORS field names (kept for agent.ipynb compatibility)
+        "cost":         summary.get("cost", 0),
+        "routes":       summary.get("routes", 0),
+        "unassigned":   summary.get("unassigned", 0),
+        "delivery":     summary.get("delivery", [0]),
+        "amount":       summary.get("amount", [0]),
+        "pickup":       summary.get("pickup", [0]),
+        "setup":        summary.get("setup", 0),
+        "service":      summary.get("service", 0),
+        "duration":     summary.get("duration", 0),
+        "waiting_time": summary.get("waiting_time", 0),
+        "priority":     summary.get("priority", 0),
+        "violations":   summary.get("violations", []),
+        "computing_times": summary.get("computing_times", {}),
+        # Additional detailed field names (aliases for clarity)
+        "routes_used":            summary.get("routes", 0),
+        "unassigned_count":       summary.get("unassigned", 0),
+        "total_delivery":         summary.get("delivery", [0]),
+        "total_amount":           summary.get("amount", [0]),
+        "total_pickup":           summary.get("pickup", [0]),
+        "setup_time_sec":         summary.get("setup", 0),
+        "service_time_sec":       summary.get("service", 0),
+        "total_duration_sec":     summary.get("duration", 0),
+        "total_waiting_time_sec": summary.get("waiting_time", 0),
     }
 
-# print(optimize_route(
-#     [
-#         {'stop_index': 1, 'store_name': 'Store A', 'address': '1600 Amphitheatre Parkway, Mountain View, CA', 'latitude': 37.422288, 'longitude': -122.085652},
-#         {'stop_index': 2, 'store_name': 'Store B', 'address': '1 Hacker Way, Menlo Park, CA', 'latitude': 37.4847, 'longitude': -122.1477},
-#         {'stop_index': 3, 'store_name': 'Store C', 'address': '2300 Traverwood Dr, Ann Arbor, MI', 'latitude': 42.3037, 'longitude': -83.7108},
-#     ]
-# ))
-# output:
-# {'total_duration_seconds': 1962, 'total_distance_meters': 0, 'ordered_stops': 
-# [{'job_id': 2, 'store_name': 'Store B', 'address': '1 Hacker Way, Menlo Park, CA', 'longitude':-122.1477, 'latitude': 37.4847, 'arrival_time_seconds': 29745,'service_duration_seconds': 300},
-#  {'job_id': 1, 'store_name': 'Store A', 'address': '1600 Amphitheatre Parkway, Mountain View, CA', 'longitude': -122.085652, 'latitude':37.422288, 'arrival_time_seconds': 31062, 'service_duration_seconds': 300}
-#]}
+    return {
+        "summary":       detailed_summary,           # Summary with original + detailed fields
+        "routes":        data["routes"],             # per-vehicle routes with steps
+        "unassigned":    data.get("unassigned", []), # stops VROOM couldn't assign
+        "ordered_stops": ordered_stops,              # flat optimised stop list
+    }
 
-# --- /pois (Points of Interest search) not req of my project.
-# It returns nearby:
-# fuel stations
-# restaurants
-# parking
-# hospitals
-# ATMs
-# warehouses (depending on tags)
-# )
 
-# {profile} inside the url endpoints means the mode of transport:
-# 1.driving-car
-# 2.driving-hgv(trucks)
-# 3.cycling
-# 4.foot-walking
-
+# ── Distance Matrix ───────────────────────────────────────────────────────────
 
 @tool
-def distance_matrix(locations: List[dict], profile: str = "driving-hgv") -> dict:
+def distance_matrix(locations: List[dict], profile: str = "driving-car") -> dict:
     """
-    Get duration and distance matrix between all pairs of locations.
-    Use this AFTER optimize_route to get accurate distances for the optimized sequence.
+    Compute duration and distance between locations in sequence.
 
-    Endpoint: POST https://api.openrouteservice.org/v2/matrix/{profile}
-    Body:
-        {
-          "locations": [[lon1, lat1], [lon2, lat2], ...],
-          "sources": [0, 1, 2],  # optional - which locations are origins
-          "destinations": [0, 1, 2]  # optional - which locations are destinations
-        }
+    Used for before/after POV comparison:
+      • unoptimised: original email stop order
+      • optimised:   VROOM-ordered stops
+
+    Endpoint: POST /v2/matrix/{profile}
+
+    Request body sent:
+      {
+        "locations": [[lon, lat], [lon, lat], ...],
+        "metrics":   ["duration", "distance"]
+      }
+
+    Response shape from /v2/matrix/{profile}:
+      {
+        "durations": [[0, 291.6, ...], [839.4, 0, ...], ...],   # seconds NxN
+        "distances": [[0, 1367.6, ...], [894.2, 0, ...], ...],  # metres  NxN
+        "metadata":  { "attribution": "...", "service": "matrix", ... }
+      }
+
+    Sequential legs are extracted as matrix[i][i+1] for i in 0..N-2.
 
     Args:
-        locations: List of dicts with 'longitude' and 'latitude' keys.
-        profile: Routing profile (default: 'driving-hgv' for trucks).
-                 Options: 'driving-car', 'driving-hgv', 'cycling-regular', 'foot-walking'
+        locations: List of { longitude, latitude, store_name? } dicts.
+        profile: ORS routing profile (default: 'driving-car').
 
     Returns:
-        dict with keys:
-          durations: NxN matrix (seconds between each pair)
-          distances: NxN matrix (meters between each pair)
-    """
-
-    if len(locations) < 2:
-        return {
-            "legs": [],
-            "total_distance_km": 0.0,
-            "total_duration_min": 0.0,
+        {
+          legs: [ { from, to, distance_km, duration_min } ],
+          total_distance_km:  float,
+          total_duration_min: float,
         }
-    
+    """
+    if len(locations) < 2:
+        return {"legs": [], "total_distance_km": 0.0, "total_duration_min": 0.0}
+
     loc_coords = [[loc["longitude"], loc["latitude"]] for loc in locations]
 
     resp = requests.post(
         f"{ORS_BASE}/v2/matrix/{profile}",
         headers=_ors_headers(),
-        json={
-            "locations": loc_coords,
-            "metrics": ["duration", "distance"],
-        },
+        json={"locations": loc_coords, "metrics": ["duration", "distance"]},
         timeout=30,
     )
     resp.raise_for_status()
@@ -347,86 +492,29 @@ def distance_matrix(locations: List[dict], profile: str = "driving-hgv") -> dict
     distances = data.get("distances", [])
 
     if not durations or not distances:
-        raise ValueError(f"Matrix API returned empty durations or distances. Response: {data}")
+        raise ValueError(f"Matrix API returned empty data. Response: {data}")
 
     legs = []
     for i in range(len(locations) - 1):
         dist = distances[i][i + 1] if i < len(distances) and (i + 1) < len(distances[i]) else None
-        dur = durations[i][i + 1] if i < len(durations) and (i + 1) < len(durations[i]) else None
+        dur  = durations[i][i + 1] if i < len(durations)  and (i + 1) < len(durations[i])  else None
 
         if dist is None or dur is None:
-            log.warning("Distance matrix[%d][%d] is None, skipping leg", i, i+1)
+            log.warning("Matrix[%d][%d] is None — skipping leg", i, i + 1)
             continue
 
         legs.append({
-            "from": locations[i].get("store_name", f"Stop {i+1}"),
-            "to": locations[i + 1].get("store_name", f"Stop {i+2}"),
-            "distance_km": round(dist / 1000, 2),
-            "duration_min": round(dur / 60, 2),
+            "from":         locations[i].get("store_name", f"Stop {i + 1}"),
+            "to":           locations[i + 1].get("store_name", f"Stop {i + 2}"),
+            "distance_km":  round(dist / 1000, 2),
+            "duration_min": round(dur  / 60,   2),
         })
 
     if not legs:
-        log.warning("No valid legs in distance matrix result")
-        return {
-            "legs": [],
-            "total_distance_km": 0.0,
-            "total_duration_min": 0.0,
-        }
-
-    total_distance_km = round(sum(leg["distance_km"] for leg in legs), 2)
-    total_duration_min = round(sum(leg["duration_min"] for leg in legs), 2)
+        return {"legs": [], "total_distance_km": 0.0, "total_duration_min": 0.0}
 
     return {
-        "legs": legs,
-        "total_distance_km": total_distance_km,
-        "total_duration_min": total_duration_min,
+        "legs":               legs,
+        "total_distance_km":  round(sum(leg["distance_km"]  for leg in legs), 2),
+        "total_duration_min": round(sum(leg["duration_min"] for leg in legs), 2),
     }
-
-# print(distance_matrix(
-#     [
-#         {'store_name': 'Store A', 'address': '1600 Amphitheatre Parkway, Mountain View, CA', 'latitude': 37.422288, 'longitude': -122.085652},
-#         {'store_name': 'Store B', 'address': '1 Hacker Way, Menlo Park, CA', 'latitude': 37.4847, 'longitude': -122.1477},
-#         {'store_name': 'Store C', 'address': '2300 Traverwood Dr, Ann Arbor, MI', 'latitude': 42.3037, 'longitude': -83.7108},
-#     ]
-# ))
-# output:
-# {'legs': [{'from': 'Store A', 'to': 'Store B', 'distance_km': 11.37, 'duration_min': 15.75}, {'from': 'Store B', 'to': 'Store C', 'distance_km': 3838.34, 'duration_min': 3244.26}], 'total_distance_km': 3849.71, 'total_duration_min': 3260.01}
-
-def optimize_route_with_retry(stops: List[dict], max_retries: int = 3) -> dict:
-    """
-    Calls optimize_route with exponential backoff on failure (spec §5.3).
-
-    Retry schedule: 1s → 3s → 9s. After max_retries exhausted, raises
-    RuntimeError("ORS_OPTIMIZATION_FAILED").
-
-    Args:
-        stops:       List of stop dicts (must have stop_index, store_name,
-                     address, latitude, longitude).
-        max_retries: Maximum number of attempts (default 3).
-
-    Returns:
-        RouteResult dict from optimize_route on success.
-
-    Raises:
-        RuntimeError: After all retries are exhausted.
-    """
-    delays = [1, 3, 9]
-    last_exc: Exception = RuntimeError("No attempts made")
-
-    for attempt, delay in enumerate(delays[:max_retries], 1):
-        try:
-            return optimize_route.invoke({"stops": stops})
-        except Exception as exc:
-            last_exc = exc
-            log.warning(
-                "ORS optimization attempt %d/%d failed: %s.%s",
-                attempt, max_retries, exc,
-                f" Retrying in {delay}s..." if attempt < max_retries else " No more retries.",
-            )
-            if attempt < max_retries:
-                time.sleep(delay)
-
-    raise RuntimeError(
-        f"ORS_OPTIMIZATION_FAILED after {max_retries} attempts: {last_exc}"
-    )
-

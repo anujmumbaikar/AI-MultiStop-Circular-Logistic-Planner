@@ -170,7 +170,6 @@ poetry.toml
 # ruff
 .ruff_cache/
 credentials/
-AI_GENERATED_CODE/
 ors-docker/
 .claude/
 CLAUDE.md

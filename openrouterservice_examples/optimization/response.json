@@ -1,0 +1,160 @@
+{
+  "code": 0,
+  "summary": {
+    "cost": 20924,
+    "routes": 2,
+    "unassigned": 1,
+    "delivery": [5],
+    "amount": [5],
+    "pickup": [0],
+    "setup": 0,
+    "service": 1500,
+    "duration": 20924,
+    "waiting_time": 0,
+    "priority": 0,
+    "violations": [],
+    "computing_times": { "loading": 117, "solving": 1, "routing": 0 }
+  },
+  "unassigned": [{ "id": 4, "location": [2.41808, 49.22619], "type": "job" }],
+  "routes": [
+    {
+      "vehicle": 1,
+      "cost": 8642,
+      "delivery": [3],
+      "amount": [3],
+      "pickup": [0],
+      "setup": 0,
+      "service": 900,
+      "duration": 8642,
+      "waiting_time": 0,
+      "priority": 0,
+      "steps": [
+        {
+          "type": "start",
+          "location": [2.35044, 48.51764],
+          "setup": 0,
+          "service": 0,
+          "waiting_time": 0,
+          "load": [3],
+          "arrival": 28800,
+          "duration": 0,
+          "violations": []
+        },
+        {
+          "type": "job",
+          "location": [2.28325, 48.5958],
+          "id": 5,
+          "setup": 0,
+          "service": 300,
+          "waiting_time": 0,
+          "job": 5,
+          "load": [2],
+          "arrival": 30352,
+          "duration": 1552,
+          "violations": []
+        },
+        {
+          "type": "job",
+          "location": [1.98465, 48.70329],
+          "id": 1,
+          "setup": 0,
+          "service": 300,
+          "waiting_time": 0,
+          "job": 1,
+          "load": [1],
+          "arrival": 33427,
+          "duration": 4327,
+          "violations": []
+        },
+        {
+          "type": "job",
+          "location": [2.03655, 48.61128],
+          "id": 2,
+          "setup": 0,
+          "service": 300,
+          "waiting_time": 0,
+          "job": 2,
+          "load": [0],
+          "arrival": 35013,
+          "duration": 5613,
+          "violations": []
+        },
+        {
+          "type": "end",
+          "location": [2.35044, 48.51764],
+          "setup": 0,
+          "service": 0,
+          "waiting_time": 0,
+          "load": [0],
+          "arrival": 38342,
+          "duration": 8642,
+          "violations": []
+        }
+      ],
+      "violations": []
+    },
+    {
+      "vehicle": 2,
+      "cost": 12282,
+      "delivery": [2],
+      "amount": [2],
+      "pickup": [0],
+      "setup": 0,
+      "service": 600,
+      "duration": 12282,
+      "waiting_time": 0,
+      "priority": 0,
+      "steps": [
+        {
+          "type": "start",
+          "location": [2.35044, 48.51764],
+          "setup": 0,
+          "service": 0,
+          "waiting_time": 0,
+          "load": [2],
+          "arrival": 28800,
+          "duration": 0,
+          "violations": []
+        },
+        {
+          "type": "job",
+          "location": [2.89357, 48.90736],
+          "id": 6,
+          "setup": 0,
+          "service": 300,
+          "waiting_time": 0,
+          "job": 6,
+          "load": [1],
+          "arrival": 33003,
+          "duration": 4203,
+          "violations": []
+        },
+        {
+          "type": "job",
+          "location": [2.39719, 49.07611],
+          "id": 3,
+          "setup": 0,
+          "service": 300,
+          "waiting_time": 0,
+          "job": 3,
+          "load": [0],
+          "arrival": 36114,
+          "duration": 7014,
+          "violations": []
+        },
+        {
+          "type": "end",
+          "location": [2.35044, 48.51764],
+          "setup": 0,
+          "service": 0,
+          "waiting_time": 0,
+          "load": [0],
+          "arrival": 41682,
+          "duration": 12282,
+          "violations": []
+        }
+      ],
+      "violations": []
+    }
+  ]
+}

@@ -22,6 +22,7 @@ TAB_PARSED_STOPS = "parsed_stops"
 TAB_GEOCODED = "geocoded"
 TAB_ROUTE = "route_output"
 TAB_ERROR = "error_log"
+TAB_REJECTION = "rejection_log"
 
 
 # ── Core Helpers ─────────────────────────────────────────
@@ -204,6 +205,7 @@ def save_route(collection_request_id: str, route: dict):
         "request_id",
         "optimized_sequence",
         "original_sequence",
+        "vehicle_id",
         "store_id",
         "store_name",
         "pickup_address",
@@ -230,6 +232,7 @@ def save_route(collection_request_id: str, route: dict):
             collection_request_id,
             stop.get("optimized_sequence", ""),
             stop.get("original_sequence", ""),
+            stop.get("vehicle_id", 1),
             stop.get("store_id", ""),
             stop.get("store_name", ""),
             stop.get("pickup_address", ""),
@@ -301,3 +304,49 @@ def check_duplicate(collection_request_id: str) -> bool:
             return True
 
     return False
+
+
+# ── Rejection Log ────────────────────────────────────────
+
+@tool
+def save_rejection(collection_request_id: str, thread_id: str, email: str, rejected_stops: list):
+    """Save rejected stops to Google Sheets rejection_log tab.
+
+    Args:
+        collection_request_id: Collection request ID
+        thread_id: Gmail thread ID
+        email: Sender email address
+        rejected_stops: List of rejected stop dicts with store info and rejection reason
+
+    Returns:
+        str: Confirmation message
+    """
+    ws = open_sheet(TAB_REJECTION)
+
+    headers = [
+        "request_id",
+        "thread_id",
+        "sender_email",
+        "store_id",
+        "store_name",
+        "address",
+        "stop_type",
+        "rejection_reason",
+        "rejected_at"
+    ]
+    ensure_headers(ws, headers)
+
+    for stop in rejected_stops:
+        ws.append_row([
+            collection_request_id,
+            thread_id,
+            email,
+            stop.get("store_id", ""),
+            stop.get("store_name", ""),
+            stop.get("address", ""),
+            stop.get("stop_type", ""),
+            stop.get("reason", ""),
+            datetime.now(timezone.utc).isoformat()
+        ])
+
+    return "rejection logged"

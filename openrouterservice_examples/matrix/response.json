@@ -1,0 +1,126 @@
+{
+  "bbox": [8.681423, 49.414599, 8.690123, 49.420514],
+  "routes": [
+    {
+      "summary": { "distance": 1367.6, "duration": 291.6 },
+      "segments": [
+        {
+          "distance": 888.6,
+          "duration": 189.1,
+          "steps": [
+            {
+              "distance": 1.8,
+              "duration": 0.4,
+              "type": 11,
+              "instruction": "Head west on Gerhart-Hauptmann-Straße",
+              "name": "Gerhart-Hauptmann-Straße",
+              "way_points": [0, 1]
+            },
+            {
+              "distance": 313.8,
+              "duration": 75.3,
+              "type": 1,
+              "instruction": "Turn right onto Wielandtstraße",
+              "name": "Wielandtstraße",
+              "way_points": [1, 6]
+            },
+            {
+              "distance": 251.7,
+              "duration": 36.2,
+              "type": 1,
+              "instruction": "Turn right onto Mönchhofstraße",
+              "name": "Mönchhofstraße",
+              "way_points": [6, 12]
+            },
+            {
+              "distance": 212.6,
+              "duration": 51,
+              "type": 0,
+              "instruction": "Turn left onto Keplerstraße",
+              "name": "Keplerstraße",
+              "way_points": [12, 15]
+            },
+            {
+              "distance": 108.7,
+              "duration": 26.1,
+              "type": 1,
+              "instruction": "Turn right onto Moltkestraße",
+              "name": "Moltkestraße",
+              "way_points": [15, 17]
+            },
+            {
+              "distance": 0,
+              "duration": 0,
+              "type": 10,
+              "instruction": "Arrive at Moltkestraße, on the left",
+              "name": "-",
+              "way_points": [17, 17]
+            }
+          ]
+        },
+        {
+          "distance": 479,
+          "duration": 102.5,
+          "steps": [
+            {
+              "distance": 265.4,
+              "duration": 63.7,
+              "type": 11,
+              "instruction": "Head east on Moltkestraße",
+              "name": "Moltkestraße",
+              "way_points": [17, 20]
+            },
+            {
+              "distance": 83,
+              "duration": 7.5,
+              "type": 2,
+              "instruction": "Turn sharp left onto Handschuhsheimer Landstraße, B 3",
+              "name": "Handschuhsheimer Landstraße, B 3",
+              "way_points": [20, 22]
+            },
+            {
+              "distance": 130.6,
+              "duration": 31.4,
+              "type": 0,
+              "instruction": "Turn left onto Roonstraße",
+              "name": "Roonstraße",
+              "way_points": [22, 24]
+            },
+            {
+              "distance": 0,
+              "duration": 0,
+              "type": 10,
+              "instruction": "Arrive at Roonstraße, on the left",
+              "name": "-",
+              "way_points": [24, 24]
+            }
+          ]
+        }
+      ],
+      "bbox": [8.681423, 49.414599, 8.690123, 49.420514],
+      "geometry": "ghrlHir~s@?BIC{ELgDo@aBa@}@I?sB?k@?S@o@@sB?_JgAJgHt@I?a@cH?CIwB]aGg@wImAt@y@f@VpEJpC",
+      "way_points": [0, 17, 24]
+    }
+  ],
+  "metadata": {
+    "attribution": "openrouteservice.org | OpenStreetMap contributors",
+    "service": "routing",
+    "timestamp": 1776183483431,
+    "query": {
+      "coordinates": [
+        [8.681495, 49.41461],
+        [8.686507, 49.41943],
+        [8.687872, 49.420318]
+      ],
+      "profile": "driving-car",
+      "profileName": "driving-car",
+      "format": "json"
+    },
+    "engine": {
+      "version": "9.5.0",
+      "build_date": "2025-10-31T12:33:09Z",
+      "graph_date": "2026-04-12T04:48:44Z",
+      "osm_date": "2026-03-30T00:00:00Z"
+    }
+  }
+}
