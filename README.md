@@ -111,7 +111,7 @@ Built with LangGraph, the pipeline flows through these nodes:
 | `GOOGLE_SHEET_ID` | Google Sheet ID for logs |
 | `DEPOT_LATITUDE` | Depot starting latitude |
 | `DEPOT_LONGITUDE` | Depot starting longitude |
-| `MAX_VEHICLES` | Max fleet size (default: 5) |
+| `MAX_VEHICLES` | Max fleet size (According to your Needs) |
 | `VEHICLE_CAPACITY` | Capacity units per vehicle (default: 100) |
 | `GMAIL_QUERY` | Gmail search query (default: `is:unread subject:Pickup Schedule`) |
 
@@ -145,10 +145,9 @@ Both matrix calls use `driving-hgv` profile for truck routing.
 | No reply sent | Check `error_log` sheet for error codes |
 | Duplicate detected | Resending same email is skipped by design |
 
-## Roadmap
+## Future TODO:
 
-- [ ] Support Gmail attachments (`.csv`, `.xlsx`)
-- [ ] Migrate from notebook to modular package structure
-- [ ] Priority-based route optimization
-- [ ] Elevation-aware routing
-- [ ] Dynamic vehicle count optimization
+- Support Gmail attachments (`.csv`, `.xlsx`) for automated data ingestion and parsing.
+- Priority-based route optimization using job/shipments priority scores.  
+- Elevation-aware routing considering terrain, slope, and fuel efficiency. 
+- Replace approximate ETA with real-time ETA using Google Maps API (traffic, accidents, road conditions)  
