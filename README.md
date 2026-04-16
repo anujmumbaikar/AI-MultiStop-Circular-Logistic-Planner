@@ -2,6 +2,26 @@
 
 AI-powered logistics route optimizer that turns inbound Gmail requests into optimized pickup/delivery schedules, stores an audit trail in Google Sheets, and sends HTML confirmation replies.
 
+## Overview
+
+AI-powered **circular multi-stop logistics planner** that automates collection route operations.  
+Parses incoming email requests with GPT-4o, extracts pickup stops, geocodes addresses via OpenRouteService, optimizes routes, and sends HTML confirmations via Gmail. Built with LangGraph for reliable workflow orchestration.
+
+### Circular Logistics Model
+
+Designed specifically for **closed-loop routing**, where vehicles start and end at the same depot:
+Depot → Stop 1 → Stop 2 → Stop 3 → ... → Stop N → Depot
+where stops : can be anything pickup , deliveries etc. 
+
+## 🎯 Target Industries
+
+- 🛒 Retail & Supermarkets
+  A truck leaves a warehouse, drops stock off at multiple stores, then returns. If any store has items to send back (returns/empties), it picks those up too — all in one loop.
+- 📦 E-commerce Deliveries
+  A delivery van leaves a sorting hub, delivers packages to multiple homes/offices, and on the way back picks up any return parcels. One round trip, no wasted empty miles.
+- 🏭 Manufacturing & Industrial Supply.
+  A vehicle leaves a factory, swings by multiple suppliers to pick up raw materials or parts, then comes back to the plant. Timed so the factory gets what it needs exactly when it needs it — no overstocking, no delays.
+
 ## Workflow Overview
 
 ![Workflow](screenshots/workflow.png)
